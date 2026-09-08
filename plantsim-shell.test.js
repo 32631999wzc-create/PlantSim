@@ -14,4 +14,5 @@ assert.match(ui,/B01:\[130,168\]/);assert.match(ui,/C03:\[260,88\]/);assert.matc
 assert.match(ui,/if\(!P\.imports\.length\)/);assert.match(css,/border:3px solid #173d3c/);assert.match(css,/0 24px 56px #173d3c38/);
 assert.doesNotMatch(css,/transform:scale\(1\.012\)|transform:scale\(1\.006\)|will-change:transform/);assert.match(css,/outline-offset:3px/);
 assert.ok(html.includes(presentation));assert.ok(html.includes(css));
+assert.doesNotMatch(css,/max-width:1512px/);assert.match(css,/width:calc\(100% - 232px\)/);assert.match(css,/max-width:1920px/);assert.match(css,/@media\(max-width:767px\).*?\.logged-in main\{width:100%/s);
 console.log('PASS login split, unnumbered sidebar, aggregate privacy and source embedding');
