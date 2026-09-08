@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const ui=fs.readFileSync('plantsim-ui.js','utf8'),presentation=fs.readFileSync('plantsim-presentation.js','utf8'),css=fs.readFileSync('plantsim-presentation.css','utf8'),html=fs.readFileSync('plantsim-demo.html','utf8');
+assert.match(presentation,/企业登录/);assert.match(presentation,/个人登录/);
+assert.doesNotMatch(presentation,/仅展示组织级聚合结果|当前范围|组织累计/);assert.match(presentation,/近12月新增/);
+assert.match(presentation,/data-period="\$\{id\}"/);
+assert.doesNotMatch(presentation,/清除本地归档/);
+assert.doesNotMatch(ui,/aria-current="\$\{i===U\.page\?'page':'false'\}">P\$\{i\}/);
+assert.match(ui,/aria-current="\$\{i===U\.page\?'page':'false'\}">\$\{n\}/);
+assert.match(ui,/项目总览/);assert.match(presentation,/function projectOverview\(\)/);
+assert.match(ui,/项目总览 →/);assert.doesNotMatch(ui,/<div class="eyebrow">\$\{names\[U\.page\]\}<\/div>/);
+assert.match(ui,/function sitePlanMap\(/);assert.match(ui,/访客中心/);assert.match(ui,/车行道路/);assert.match(ui,/铺装广场/);assert.match(ui,/risk-ring/);
+assert.match(ui,/B01:\[130,168\]/);assert.match(ui,/C03:\[260,88\]/);assert.match(css,/Content-only hover lift/);assert.doesNotMatch(css,/\.logged-in \.nav:hover|\.top:hover/);
+assert.match(ui,/if\(!P\.imports\.length\)/);assert.match(css,/border:3px solid #173d3c/);assert.match(css,/0 24px 56px #173d3c38/);
+assert.doesNotMatch(css,/transform:scale\(1\.012\)|transform:scale\(1\.006\)|will-change:transform/);assert.match(css,/outline-offset:3px/);
+assert.ok(html.includes(presentation));assert.ok(html.includes(css));
+console.log('PASS login split, unnumbered sidebar, aggregate privacy and source embedding');

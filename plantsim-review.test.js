@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),E=require('./plantsim-engine.js'),B=E.business;
+const p=E.newProject();E.importFiles(p);E.resolveConflict(p.versions[0],3);E.confirmBaseline(p,p.versions[0]);E.saveGoal(p,E.parseGoal(E.DEFAULT_TEXT));p.cards.forEach(E.freezeCard);
+const run=E.complete(E.newRun(p,p.versions[0]));
+const draft={versionId:'V1',outcome:'conditional',reviewer:'专家',reasons:['cost'],note:'控制投资',risks:'保留高温风险',conditions:'补充供水预案'};
+assert.throws(()=>B.recordDecision(p,{...draft,reviewer:''}));
+assert.throws(()=>B.recordDecision(p,{...draft,conditions:''}));
+assert.throws(()=>B.recordDecision(p,{...draft,reasons:[]}));
+B.recordDecision(p,draft);draft.note='修改草稿';assert.equal(p.adoption.note,'控制投资');
+assert.equal(p.decisions.length,1);assert.equal(p.decisions[0].evidence.dimensions.length,5);
+B.recordDecision(p,{...draft,outcome:'defer'});assert.equal(p.adoption,null);assert.ok(B.completionIssues(p).length);
+B.recordDecision(p,{...draft,outcome:'adopt'});assert.equal(p.decisions.length,3);
+const archived=B.archive(p);assert.equal(B.restore(archived).decisions.length,3);
+const costs=B.costs(run),per=run.paths.map(x=>B.costs(run,x.id));
+assert.ok(Math.abs(per.reduce((n,c)=>n+c.construction+c.maintenance+c.rework,0)/per.length-costs.construction-costs.maintenance-costs.rework)<1e-6);
+p.status='completed';assert.throws(()=>B.recordDecision(p,draft));
+console.log('PASS decision validation, non-adoption blocking, immutable history, archive and average full-cycle costs');
