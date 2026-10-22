@@ -1,0 +1,32 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const port=process.argv[2]||'9360',out=process.argv[3]||__dirname,wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{
+ let target;for(let i=0;i<50&&!target;i++){try{target=(await(await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t=>t.type==='page'&&t.url.includes('plantsim-demo.html'));}catch{}if(!target)await wait(150);}if(!target)throw Error('Page not found');
+ const ws=new WebSocket(target.webSocketDebuggerUrl),pending=new Map(),errors=[],requests=[];let id=0;
+ ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&pending.has(m.id)){const h=pending.get(m.id);pending.delete(m.id);m.error?h.reject(Error(m.error.message)):h.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);else if(m.method==='Network.requestWillBeSent')requests.push(m.params.request.url);};
+ await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
+ const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));});
+ const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;};
+ const click=async sel=>{await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)throw Error('Missing '+${JSON.stringify(sel)});e.click();})()`);await wait(90);};
+ const width=async w=>{await send('Emulation.setDeviceMetricsOverride',{width:w,height:w<700?1000:1150,deviceScaleFactor:1,mobile:false});await wait(90);};
+ const nav=async p=>{if(p>=9&&await evaluate('innerWidth<768')){await click('[data-act="ops-menu"]');await click(`[data-act="ops-menu-nav"][data-page="${p}"]`);}else{if(p>=9&&!await evaluate('document.querySelector(".ops-nav-group").open'))await click('.ops-nav-group summary');await click(`#nav [data-page="${p}"]`);}};
+ const shot=async name=>{const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));};
+ const text=()=>evaluate('document.querySelector("#app").innerText');
+ try{
+ await send('Runtime.enable');await send('Network.enable');await send('Page.enable');await wait(400);await click('[data-act="login-submit"]');
+ assert.equal(await evaluate('document.querySelector(".ops-nav-group").open'),false);
+ for(const w of [2560,1920,1278,1024,768,390]){await width(w);for(let p=0;p<=12;p++){await nav(p);const m=await evaluate(`({page:${p},width:innerWidth,client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,title:document.querySelector('#app h1,#app h2,#app h3')?.textContent})`);assert.ok(m.title,JSON.stringify(m));assert.ok(m.scroll<=m.client+1,'overflow '+JSON.stringify(m));if(w===1920&&p>=9)await shot('workspace-'+p+'-desktop.png');if(w===390&&p===9)await shot('workspace-mobile.png');}console.log('PASS 13 pages at '+w);}
+ await width(1920);await nav(9);assert.match(await text(),/缺 6 株/);assert.match(await text(),/朱槿叶背检查/);await click('.ops-nav-group summary');assert.equal(await evaluate('document.querySelector(".ops-nav-group").open'),false);await click('[data-act="ops-purchase"][data-id="MAT-B01"]');
+ await evaluate(`(()=>{const f=document.querySelector('#ops-purchase-form');f.elements.quantity.value='0';f.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));})()`);assert.match(await evaluate('document.querySelector(".ops-form-error").textContent'),/整数/);
+ await evaluate(`(()=>{const f=document.querySelector('#ops-purchase-form');f.elements.quantity.value='6';f.elements.note.value='先确认交期和运输费用';f.requestSubmit();})()`);await wait(100);assert.match(await text(),/LOCAL-P001/);assert.match(await text(),/510/);assert.equal(await evaluate('window.PlantSimEnterprise.inventory("MAT-B01").gapByDeadline'),6);
+ await nav(11);await click('[data-act="ops-review"][data-id="WO-102"]');await evaluate(`(()=>{const f=document.querySelector('#ops-review-form');f.elements.conclusion.value='已完成复核';f.elements.note.value='已完成现场检查，补齐照片，未作物种诊断。';f.requestSubmit();})()`);await wait(100);assert.match(await text(),/已完成复核/);assert.match(await text(),/当前没有待复核事项/);
+ await nav(9);assert.match(await text(),/已登记 6 株采购草稿/);assert.ok(!await evaluate('!!document.querySelector(".ops-priority [data-act=ops-review]")'));await shot('workspace-processed.png');
+ await send('Page.reload');await wait(600);if(await evaluate('!!document.querySelector("[data-act=login-submit]")'))await click('[data-act="login-submit"]');await nav(10);assert.match(await text(),/LOCAL-P001/);await nav(11);assert.match(await text(),/已完成复核/);
+ await nav(12);const composer=await evaluate('document.querySelector(".erp-composer").getBoundingClientRect().top');assert.ok(composer<400,'Search pushed below fold');await click('[data-act="erp-example"][data-index="0"]');await click('[data-act="erp-material"][data-id="MAT-B01"]');assert.match(await text(),/现存可用34株/);await click('[data-act="erp-new-chat"]');await click('[data-act="erp-example"][data-index="2"]');await click('[data-act="erp-disambiguate"][data-id="pest-mites"]');assert.match(await text(),/待鉴定/);
+ await click('[data-act="erp-new-chat"]');await click('[data-act="erp-example"][data-index="4"]');await click('[data-act="erp-record"][data-id="PUB-SH-20260902"]');assert.match(await evaluate('document.querySelector("#overlay").innerText'),/不是主管部门工单号/);await click('#overlay [data-act="close"]');
+ await nav(12);await click('[data-act="erp-new-chat"]');await click('[data-act="erp-example"][data-index="1"]');await click('[data-act="erp-entity"]');assert.match(await evaluate('document.querySelector("#overlay").innerText'),/常用名称|扶桑/);await click('#overlay [data-act="close"]');await shot('workspace-query-answer.png');
+ await nav(10);await click('[data-act="ops-withdraw"]');assert.match(await text(),/已撤回/);
+ assert.equal(errors.length,0,errors.join('\n'));assert.equal(requests.filter(u=>/^https?:/.test(u)).length,0);console.log('PASS collapse, task actions, validation, persistence, evidence, alias clarification and zero API requests');
+ }finally{try{await send('Browser.close');}catch{}ws.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
