@@ -1,0 +1,33 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const port=process.argv[2]||'9347',out=process.argv[3]||__dirname,wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{
+ let target;for(let i=0;i<50&&!target;i++){try{const tabs=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();target=tabs.find(t=>t.type==='page'&&t.url.includes('plantsim-demo.html'));}catch{}if(!target)await wait(150);}if(!target)throw Error('PlantSim page not found');
+ const ws=new WebSocket(target.webSocketDebuggerUrl),pending=new Map(),errors=[],requests=[];let id=0;
+ ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&pending.has(m.id)){const h=pending.get(m.id);pending.delete(m.id);m.error?h.reject(Error(m.error.message)):h.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);else if(m.method==='Network.requestWillBeSent')requests.push(m.params.request.url);};
+ await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
+ const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));});
+ const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;};
+ const click=async selector=>{await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing '+${JSON.stringify(selector)});e.click();})()`);await wait(80);};
+ const nav=async page=>{await click(`#nav [data-page="${page}"]`);};
+ const width=async w=>{await send('Emulation.setDeviceMetricsOverride',{width:w,height:w<700?1000:1150,deviceScaleFactor:1,mobile:false});await wait(100);};
+ const shot=async name=>{const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));};
+ try{
+ await send('Runtime.enable');await send('Network.enable');await send('Page.enable');
+ for(let i=0;i<30;i++){if(await evaluate("!!document.querySelector('[data-act=login-submit]')"))break;await wait(100);}
+ await click('[data-act="login-submit"]');
+ for(const w of [2560,1920,1278,1024,768,390]){await width(w);for(const page of [0,1,2,3,4,5,6,7,8,9,10,11,12]){await nav(page);const metrics=await evaluate(`({page:${page},width:innerWidth,client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,title:document.querySelector('#app h1,#app h2,#app h3')?.textContent})`);assert.ok(metrics.title,JSON.stringify(metrics));assert.ok(metrics.scroll<=metrics.client+1,'Horizontal document overflow: '+JSON.stringify(metrics));if(w===1920&&page===9)await shot('enterprise-query-desktop.png');if(w===1920&&page===11)await shot('enterprise-graph-desktop.png');if(w===390&&page===9)await shot('enterprise-query-mobile.png');}console.log('PASS all 13 pages at width '+w);}
+ await width(1920);await nav(9);await click('[data-act="erp-example"][data-index="0"]');
+ assert.match(await evaluate("document.querySelector('.erp-conversation').innerText"),/多个花色物料/);
+ await click('[data-act="erp-material"][data-id="MAT-B01"]');assert.match(await evaluate("document.querySelector('.erp-conversation').innerText"),/现存可用34株/);await shot('enterprise-inventory-answer.png');
+ await click('[data-act="erp-example"][data-index="5"]');await click('[data-act="erp-supplier"][data-id="SUP-A"]');assert.match(await evaluate("document.querySelector('.erp-conversation').innerText"),/庭院更新/);
+ await click('[data-act="erp-new-chat"]');await click('[data-act="erp-example"][data-index="2"]');await click('[data-act="erp-disambiguate"][data-id="pest-mites"]');assert.match(await evaluate("document.querySelector('.erp-conversation').innerText"),/待鉴定/);
+ await click('[data-act="erp-example"][data-index="6"]');await click('[data-act="erp-record"][data-id="PUB-SH-20260902"]');assert.match(await evaluate("document.querySelector('#overlay').innerText"),/不是主管部门工单号/);await click('#overlay [data-act="close"]');
+ await nav(10);for(const tab of ['materials','stocks','quotes','work','cost','public']){await click(`[data-act="erp-resource-tab"][data-tab="${tab}"]`);assert.ok(await evaluate("document.querySelector('.erp-resource-body').innerText.length>20"));}await click('[data-act="erp-resource-tab"][data-tab="work"]');await shot('enterprise-public-records.png');
+ await nav(12);await click('[data-act="erp-toggle-system"][data-id="nursery"]');await nav(9);await click('[data-act="erp-new-chat"]');await click('[data-act="erp-example"][data-index="0"]');await click('[data-act="erp-material"][data-id="MAT-B01"]');assert.match(await evaluate("document.querySelector('.erp-conversation').innerText"),/快照暂不可用/);
+ await nav(12);await evaluate("(()=>{const e=document.querySelector('#erp-role');e.value='designer';e.dispatchEvent(new Event('change',{bubbles:true}));})()");await click('[data-act="erp-cost-query"]');const body=await evaluate("document.querySelector('.erp-conversation').innerText");assert.match(body,/财务明细未展示/);assert.ok(!body.includes('¥7800'));
+ await nav(11);await click('[data-act="erp-entity-select"][data-id="plant-hibiscus"]');await click('[data-act="erp-ask-entity"][data-id="plant-hibiscus"]');await click('[data-act="erp-reference"][data-id="plant-hibiscus"]');assert.match(await evaluate("document.querySelector('#app').innerText"),/模拟目标|基线/);assert.match(await evaluate("document.querySelector('#toast').innerText"),/资料引用已加入目标草稿/);
+ const frozen=await evaluate(`(()=>{const E=window.PlantSimEngine,p=E.newProject();E.importFiles(p);E.resolveConflict(p.versions[0],3);E.confirmBaseline(p,p.versions[0]);p.enterpriseRefs=[{entityId:'plant-hibiscus',snapshotId:window.PlantSimEnterprise.snapshot.id}];E.saveGoal(p,E.parseGoal(E.DEFAULT_TEXT));p.cards.forEach(E.freezeCard);p.enterpriseRefs[0].entityId='unconfirmed-change';const r=E.newRun(p,p.versions[0]);return r.enterpriseSnapshot.refs[0].entityId==='plant-hibiscus'&&p.goals[0].enterpriseSnapshot.refs[0].entityId==='plant-hibiscus';})()`);assert.ok(frozen,'Goal/run references included unconfirmed changes');
+ assert.equal(errors.length,0,errors.join('\n'));assert.equal(requests.filter(u=>/^https?:/.test(u)).length,0,'Page performed runtime HTTP requests');console.log('PASS query journeys, public evidence, partial availability, role view, citations, snapshot isolation and zero runtime HTTP requests');
+ }finally{try{await send('Browser.close');}catch{}ws.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

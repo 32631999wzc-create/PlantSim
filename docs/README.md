@@ -32,6 +32,13 @@
 - [`Clay 来源说明`](design/clay/SOURCE.md)：上游设计条目的说明与链接。
 - [`第三方 MIT License`](design/clay/LICENSE)：设计参考材料对应的许可文本。
 
+## 5 企业知识协同快照（2026-10-22）
+
+- [ERP快照实施说明](product/PlantSim_ERP快照实施说明.md)：页面、实体模型、查询规则、原有流程衔接及维护方式。
+- [ERP公开资料登记](technical/PlantSim_ERP公开资料登记.md)：九份公开来源、原文链接、日期、可支持事实与演示边界。
+- [ERP机读数据快照](technical/enterprise-snapshot.json)：公开项目、排查报道、名称知识和演示业务记录。
+- [ERP快照验收](acceptance/PlantSim_ERP快照验收.md)：自动业务测试、浏览器交互与响应式验证。
+
 ## 文档与实现的关系
 
 - PRD 和技术文档定义目标架构与生产化方向。

@@ -1,0 +1,32 @@
+// Mechanical synchronization: standalone sources -> embedded offline delivery file.
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const root=process.argv[2]||__dirname;
+const read=name=>fs.readFileSync(path.join(root,name),'utf8').replace(/\r\n/g,'\n').trim();
+let ui=read('plantsim-ui.js');
+const block='/* BEGIN ENTERPRISE */\n'+read('plantsim-enterprise.js')+'\n'+read('plantsim-enterprise-ui.js')+'\n/* END ENTERPRISE */';
+if(ui.includes('/* BEGIN ENTERPRISE */'))ui=ui.replace(/\/\* BEGIN ENTERPRISE \*\/[^]*?\/\* END ENTERPRISE \*\//,block);
+else ui=ui.replace('function resolvedProjectOverview()',block+'\nfunction resolvedProjectOverview()');
+ui=ui.replace('comparison,traceView,resolvedProjectOverview];','comparison,traceView,resolvedProjectOverview,enterpriseQueryView,enterpriseResourceView,enterpriseGraphView,enterpriseSystemsView];');
+ui=ui.replace("<span>${U.page}/${names.length-1} · ${names[U.page]}</span>","<span>${U.page}/8 · ${names[U.page]}</span>");
+fs.writeFileSync(path.join(root,'plantsim-ui.js'),ui+'\n');
+let css=read('plantsim-presentation.css');
+const cssBlock='/* BEGIN ENTERPRISE CSS */\n'+read('plantsim-enterprise.css')+'\n/* END ENTERPRISE CSS */';
+if(css.includes('/* BEGIN ENTERPRISE CSS */'))css=css.replace(/\/\* BEGIN ENTERPRISE CSS \*\/[^]*?\/\* END ENTERPRISE CSS \*\//,cssBlock);
+else css+='\n\n'+cssBlock;
+fs.writeFileSync(path.join(root,'plantsim-presentation.css'),css+'\n');
+let html=read('plantsim-demo.html');
+// Locate the existing embedded presentation stylesheet by its first line.
+const first=read('plantsim-presentation.css').split('\n')[0];
+const start=html.indexOf(first),end=html.indexOf('</style>');
+if(start<0||end<start)throw Error('Presentation stylesheet anchor not found');
+html=html.slice(0,start)+css+'\n'+html.slice(end);
+const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+if(scripts.length!==4)throw Error('Expected four inline script bundles');
+const last=scripts[3];html=html.slice(0,last.index)+'<script>\n'+ui+'\n</script>'+html.slice(last.index+last[0].length);
+fs.writeFileSync(path.join(root,'plantsim-demo.html'),html+'\n');
+const data=require(path.join(path.resolve(root),'plantsim-enterprise.js'));
+const manifest={snapshot:data.snapshot,sources:data.sources,entities:data.entities,projects:data.projects,publicRecords:data.publicRecords,materials:data.materials,suppliers:data.suppliers,stocks:data.stocks,quotes:data.quotes,workOrders:data.workOrders,costs:data.costs,notice:'公开事实与演示编制记录独立标注。来源不证明演示数量、金额、批次或执行情况。'};
+fs.mkdirSync(path.join(root,'docs','technical'),{recursive:true});
+fs.writeFileSync(path.join(root,'docs','technical','enterprise-snapshot.json'),JSON.stringify(manifest,null,2)+'\n');
+console.log('Synced enterprise data, UI and CSS into the offline HTML.');
